@@ -11,7 +11,9 @@
 * Margarita Mamani Condori - 20133573
 * ================================================================
 clear all
-global direct "C:\Users\Lenovo\OneDrive\Documentos\DiplomadoQLAB\Intro_eco_aplicada\trabajo_final"
+ssc install estout
+
+global direct "G:\My Drive\QLAB2025\econometria\trabajo_final"
 cd "$direct\datos"
 
 * =========================================================================
@@ -148,6 +150,21 @@ label variable ingtpu01 "Monto S/. Juntos (Hogar, anual)"
 label variable ingtpu03 "Monto S/. Pensión 65 (Hogar, anual)"
 label variable mieperho "Número de miembros en el hogar"
 
+label define dom_label 1 "Costa Norte" 2 "Costa Centro" 3 "Costa Sur" ///
+                     4 "Sierra Norte" 5 "Sierra Centro" 6 "Sierra Sur" ///
+                     7 "Selva" 8 "Lima Metropolitana", replace
+label values dominio dom_label
+label variable dominio "Dominio Geográfico (8 regiones)"
+
+* (Etiquetas para ESTRATO)
+label define est_label 1 "Lima Metro" 2 "Resto Costa Urb" 3 "Sierra Urb" ///
+                     4 "Selva Urb" 5 "Pueblos 2k-20k" 6 "Costa Rural" ///
+                     7 "Sierra Rural" 8 "Selva Rural", replace
+label values estrato est_label
+label variable estrato "Estrato Geográfico (8 estratos)"
+
+order AÑO id_hogar conglome vivienda hogar codperso
+
 save "base_2022_completa.dta", replace
 
 
@@ -168,6 +185,7 @@ label variable beneficio_juntos "Hogar recibe Juntos (1=Sí)"
 
 * Filtramos a los niños en edad escolar, 6 a 16 años, en la muestra
 keep if edad_nino >= 6 & edad_nino <= 16
+order AÑO id_hogar codperso asistencia_escolar beneficio_juntos
 
 * 2.1 Ejecutamos las pruebas de medias (ttest)
 
@@ -199,16 +217,22 @@ tab dominio beneficio_juntos, row chi2
 * =========================================================================
 use "base_2022_completa.dta", clear
 
-* En caso se utilice la base_2022_completa independientemente de ejecutar la sección anterior se debe generar las siguientes variables: 
+* En caso se utilice la base_2022_completa independientemente de ejecutar 
+* la sección anterior se debe generar las siguientes variables:
 
-*gen asistencia_escolar = 0
-*replace asistencia_escolar = 1 if p307 == 1
-*replace asistencia_escolar = . if p307 > 2 | p307 == .
-*gen beneficio_juntos = (ingtpu01 > 0 & ingtpu01 != .) 
-*replace beneficio_juntos = 0 if beneficio_juntos == .
-*gen p65 = (ingtpu03 > 0 & ingtpu03 != .) 
-*replace p65 = 0 if p65 == .
-*keep if edad_nino >= 6 & edad_nino <= 16
+gen asistencia_escolar = 0
+replace asistencia_escolar = 1 if p307 == 1
+replace asistencia_escolar = . if p307 > 2 | p307 == .
+
+
+gen beneficio_juntos = (ingtpu01 > 0 & ingtpu01 != .) 
+replace beneficio_juntos = 0 if beneficio_juntos == .
+
+gen p65 = (ingtpu03 > 0 & ingtpu03 != .) 
+replace p65 = 0 if p65 == .
+
+
+keep if edad_nino >= 6 & edad_nino <= 16
 
 * 3.1 Gráfico de Barras
 graph bar (mean) asistencia_escolar, over(beneficio_juntos) ///
@@ -246,3 +270,4 @@ estout modelo_1 modelo_2, cells(b(star fmt(3)) se(par fmt(2))) ///
     legend varlabels(_cons Constant)
 
 * En conclusión, el análisis descriptivo demuestra un fuerte sesgo de selección, por lo que en el análisis asociativo se observa que, usando el modelo OLS, no se encuentra una asociación estadísticamente significativa. Este resultado no tiene robustez, debido a la alta probabilidad de sesgo de selección. Por lo tanto, para estimar el efecto causal del programa es necesario utilizar una metodología más robusta como Efectos fijos, utilizando datos de panel, que es el objetivo de nuestro proyecto.
+
