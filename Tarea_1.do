@@ -13,7 +13,7 @@
 clear all
 ssc install estout
 
-global direct "G:\My Drive\QLAB2025\econometria\trabajo_final"
+global direct "C:\Users\lesly\OneDrive\Documentos\DiplomadoQLAB\Intro_eco_aplicada\trabajo_final"
 cd "$direct\datos"
 
 * =========================================================================
@@ -126,8 +126,8 @@ save "base_2022_persona.dta", replace
 
 * 1.3.1 Información a nivel de hogar (Sumaria-2022)
 import delimited using "Sumaria-2022.csv", clear stringcols(_all) encoding("latin1")
-destring ingtpu01 ingtpu03 mieperho estrato dominio, replace force
-keep conglome vivienda hogar ingtpu01 ingtpu03 mieperho estrato dominio
+destring ingtpu01 ingtpu03 mieperho estrato dominio gashog2d, replace force
+keep conglome vivienda hogar ingtpu01 ingtpu03 mieperho estrato dominio gashog2d
 save "temp_sumaria_2022.dta", replace
 
 * 1.3.2 Merge de las bases de datos creadas anteriormente
@@ -149,6 +149,9 @@ label variable id_hogar "ID númerico del hogar"
 label variable ingtpu01 "Monto S/. Juntos (Hogar, anual)"
 label variable ingtpu03 "Monto S/. Pensión 65 (Hogar, anual)"
 label variable mieperho "Número de miembros en el hogar"
+
+gen log_gasto = log(gashog2d/mieperho)
+label variable log_gasto "Log del gasto per cápita'"
 
 label define dom_label 1 "Costa Norte" 2 "Costa Centro" 3 "Costa Sur" ///
                      4 "Sierra Norte" 5 "Sierra Centro" 6 "Sierra Sur" ///
@@ -213,7 +216,7 @@ tab dominio beneficio_juntos, row chi2
 
 
 * =========================================================================
-* 3. Análisis gráfico y regresión OLS
+* 3. Análisis gráfico, regresión OLS y diagnósticos
 * =========================================================================
 use "base_2022_completa.dta", clear
 
@@ -250,13 +253,31 @@ graph box educ_jefe_nivel, over(beneficio_juntos) ///
 	
 * El Gráfico 2 muestra el sesgo de selección en la variable de educación del jefe de hogar. El grupo de tratamiento se concentra en el Nivel 1 (Primaria) a comparación del grupo de control, cuya mediana es el Nivel 2 (Secundaria). Es decir, el nivel de educacción del jefe/a de hogar que pertenecen al programa es bajo. Esto confirma el resultado en el ttest educ_jefe_nivel, by(beneficio_juntos) y demuestra que las comparaciones entre ambos grupos está fuertemente sesgada.
 
+* 3.3 Gráfico de densidad Kernel 
+twoway (kdensity log_gasto if beneficio_juntos == 0, color(blue%30) recast(area)) ///
+       (kdensity log_gasto if beneficio_juntos == 1, color(red%30) recast(area)), ///
+       legend(label(1 "Control") label(2 "Tratamiento")) ///
+       title("Gráfico 3: Densidad de Gasto (Focalización del programa)") ///
+       xtitle("Log Gasto per cápita") ytitle("Densidad") ///
+       name(g3_densidad, replace)
+	   
+* El Gráfico 3 presenta la función de densidad de probailidad del logaritmo del gasto per cápita, el cual es un proxy de bienestar, para el grupo de control y tratamiento. Se observa que la distribuciòn del grupo de tratamiento se desplaza hacia la izquierda, lo cual hace referencia a que este grupo tiene menor gasto a diferencia del grupo de control. Por lo tanto, hay una buena focalización del programa. Sin embargo, los grupos no son comparables, porque el grupo de control es más rico ex ante, lo cual confirma el sesgo de selección.
+	  
+* 3.4 Gráfico de dispersión y ajuste lineal
+twoway (scatter log_gasto educ_jefe_nivel, mcolor(black%5) msize(tiny)) ///
+       (lfit log_gasto educ_jefe_nivel, lcolor(red) lwidth(thick)), ///
+       title("Gráfico 4: Retornos a la educación del Jefe") ///
+       xtitle("Nivel educativo Jefe (Categoría)") ytitle("Log Gasto per cápita") ///
+       name(g5_scat, replace)
+	   
+* El Gráfico 4 presenta la relación entre el nivel educativo del jefe de hogar y el bienestar económico (logaritmo del gasto per cápita). La línea de ajuste lineal muestra una pendiente positiva y pronunciada, confirmando que mayores niveles educativos están fuertemente correlacionados con un mayor bienestar en el hogar. Dado que previamente establecimos que los beneficiarios del programa Juntos se concentran en los niveles educativos más bajos (0 y 1) (Gráfico 2), este gráfico ilustra el mecanismo de transmisión de la pobreza: la baja escolaridad del jefe se traduce en menores recursos económicos. Esto refuerza la necesidad de controlar rigurosamente por el nivel educativo y el gasto en nuestro análisis multivariado para evitar atribuir al programa efectos que en realidad provienen de la pobreza estructural del hogar.
 
-* 3.3 Análisis asociativo multivaridado
+* 3.5 Análisis asociativo multivaridado
 
 * Definimos la lista de controles 
 global controles "i.sexo_nino c.edad_nino c.educ_jefe_nivel i.sexo_jefe c.edad_jefe i.ocupinf_jefe c.mieperho i.p65 i.estrato i.dominio"
 
-* Modelo 1: correlación simpre
+* Modelo 1: correlación simple
 reg asistencia_escolar i.beneficio_juntos, vce(cluster id_hogar)
 est store modelo_1
 
@@ -271,3 +292,31 @@ estout modelo_1 modelo_2, cells(b(star fmt(3)) se(par fmt(2))) ///
 
 * En conclusión, el análisis descriptivo demuestra un fuerte sesgo de selección, por lo que en el análisis asociativo se observa que, usando el modelo OLS, no se encuentra una asociación estadísticamente significativa. Este resultado no tiene robustez, debido a la alta probabilidad de sesgo de selección. Por lo tanto, para estimar el efecto causal del programa es necesario utilizar una metodología más robusta como Efectos fijos, utilizando datos de panel, que es el objetivo de nuestro proyecto.
 
+* 3.6 Diagnóstico del modelo // Para correr los test de diagnóstico (post estimación) ejecutamos el modelo 'quietly' sin cluster
+quietly reg asistencia_escolar i.beneficio_juntos sexo_nino edad_nino educ_jefe_nivel sexo_jefe edad_jefe ocupinf_jefe mieperho p65 i.estrato i.dominio
+
+* A. Test de Multicolinealidad (VIF)
+display "Test de multicolinealidad (VIF)"
+estat vif
+* Mean VIF = 2.18 --> No existe problema de multicolinealidad
+
+* B. Test de Heterocedasticidad (White y Breusch-Pagan)
+display "Test de heterocedasticidad"
+estat hettest
+estat imtest, white
+* H0: Homocedasticidad. Si p-value < 0.05, hay heterocedasticidad, por lo que se justifica uso de cluster.
+
+* C. Test de Especificación (Ramsey RESET)
+display "Test de variables omitidas"
+ovtest
+* H0: El modelo no tiene variables omitidas. Si p-value < 0.05, rechazamos la hipótesis nula. El modelo OLS de corte transversal tiene sesgo de variables omitidas, por lo que amerita modelo de datos de panel.
+
+* D. Test de normalidad de residuos
+display "Test de normalidad de residuos"
+predict residuos, resid
+sktest residuos
+* Los residuos de una variable dependiente binaria no pueden tener distribución normal; sin embargo, debido al tamaño de la muestra N, el TLC garantiza la normalidad asintótica de los estimadores de OLS.
+
+* Gráfico de normalidad de residuos
+kdensity residuos, normal title("Normalidad de residuos") name(g6_norm, replace)
+* La distribución bimodal es característica de los residuos en modelos de variable dependiente binaria.
